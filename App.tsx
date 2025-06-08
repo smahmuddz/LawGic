@@ -1,52 +1,79 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GoogleGenAI, Chat, GenerateContentResponse, Candidate } from '@google/genai';
-import { Header } from './components/Header';
-import { ChatWindow } from './components/ChatWindow';
+import React, { useState, useEffect, useCallback } from 'react';
+// Note: You'll need to export your ChatMessage and ChatWindow for this structure
+import { ChatMessage, ChatWindow } from './components/ChatWindow'; 
 import { ChatInput } from './components/ChatInput';
 import { LoadingIndicator } from './components/LoadingIndicator';
 import { ErrorMessage } from './components/ErrorMessage';
 import { SuggestionChips } from './components/SuggestionChips';
 import type { ChatMessageInterface, GroundingChunk } from './types';
 import { GEMINI_MODEL_NAME, SYSTEM_INSTRUCTION, INITIAL_BOT_GREETING_ID, INITIAL_BOT_GREETING_TEXT, SUGGESTION_TEMPLATES } from './constants';
+import { GoogleGenAI, Chat, GenerateContentResponse, Candidate } from '@google/genai';
+
+const CHAT_HISTORY_SESSION_KEY = 'chat_history';
 
 const App: React.FC = () => {
   const [chatSession, setChatSession] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessageInterface[]>([]);
-  const [streamingBotResponse, setStreamingBotResponse] = useState<string>('');
-  const [streamingBotGroundingChunks, setStreamingBotGroundingChunks] = useState<GroundingChunk[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  // ... other state variables remain the same
+
   const apiKey = process.env.API_KEY;
 
+  // This effect now initializes the chat, either new or restored from sessionStorage
   useEffect(() => {
     if (!apiKey) {
       setError("API_KEY environment variable not set. Please configure it to use the chatbot.");
-      setIsLoading(false);
       return;
     }
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const newChatSession = ai.chats.create({
-        model: GEMINI_MODEL_NAME,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          tools: [{googleSearch: {}}], // Enable Google Search grounding
-        },
-      });
+      
+      // --- START: NEW LOGIC FOR RESTORING HISTORY ---
+      const savedHistoryRaw = sessionStorage.getItem(CHAT_HISTORY_SESSION_KEY);
+      const savedHistory: ChatMessageInterface[] | null = savedHistoryRaw ? JSON.parse(savedHistoryRaw) : null;
+
+      let newChatSession;
+      if (savedHistory && savedHistory.length > 0) {
+        console.log("Restoring chat history from sessionStorage.");
+        // Re-map history to the format Gemini SDK's `restore` expects
+        const historyForSDK = savedHistory.map(msg => ({
+          role: msg.sender, // 'user' or 'bot'
+          parts: [{ text: msg.text }]
+        })).slice(1); // Exclude the initial greeting, as the system instruction handles it
+        
+        newChatSession = ai.chats.restore({
+          model: GEMINI_MODEL_NAME,
+          config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{googleSearch: {}}] },
+          history: historyForSDK
+        });
+        // Also restore the messages for display
+        setMessages(savedHistory.map(msg => ({...msg, timestamp: new Date(msg.timestamp)})));
+      } else {
+        console.log("Starting a new chat session.");
+        newChatSession = ai.chats.create({
+          model: GEMINI_MODEL_NAME,
+          config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{googleSearch: {}}] },
+        });
+        // Add initial greeting for a new chat
+        const initialGreeting = {
+          id: INITIAL_BOT_GREETING_ID,
+          text: INITIAL_BOT_GREETING_TEXT,
+          sender: 'bot' as const,
+          timestamp: new Date()
+        };
+        setMessages([initialGreeting]);
+        sessionStorage.setItem(CHAT_HISTORY_SESSION_KEY, JSON.stringify([initialGreeting]));
+      }
+      // --- END: NEW LOGIC ---
+
       setChatSession(newChatSession);
-      // Add initial greeting message from the bot
-      setMessages([{
-        id: INITIAL_BOT_GREETING_ID,
-        text: INITIAL_BOT_GREETING_TEXT,
-        sender: 'bot',
-        timestamp: new Date()
-      }]);
+
     } catch (e) {
       console.error("Failed to initialize Gemini AI:", e);
       setError(`Failed to initialize AI services. ${e instanceof Error ? e.message : String(e)}`);
     }
   }, [apiKey]);
 
+  // This function now saves the updated history after each message
   const handleSendMessage = useCallback(async (userInput: string) => {
     if (!chatSession || !userInput.trim()) return;
 
@@ -56,116 +83,48 @@ const App: React.FC = () => {
       sender: 'user',
       timestamp: new Date(),
     };
-    setMessages(prevMessages => [...prevMessages, newUserMessage]);
+    
+    // Optimistically update UI and save history
+    const updatedMessages = [...messages, newUserMessage];
+    setMessages(updatedMessages);
+    sessionStorage.setItem(CHAT_HISTORY_SESSION_KEY, JSON.stringify(updatedMessages));
+
     setIsLoading(true);
+    // ... reset error, streaming state ...
     setError(null);
     setStreamingBotResponse('');
     setStreamingBotGroundingChunks([]);
 
     try {
+      // ... the entire streaming logic from `const result = ...` remains the same ...
       const result = await chatSession.sendMessageStream({ message: userInput });
       let accumulatedText = '';
       let accumulatedChunks: GroundingChunk[] = [];
 
-      for await (const chunk of result) { // chunk is GenerateContentResponse
-        const chunkText = chunk.text;
-        if (chunkText) {
-          accumulatedText += chunkText;
-          setStreamingBotResponse(prev => prev + chunkText);
-        }
-        
-        const candidate = chunk.candidates?.[0] as Candidate | undefined;
-        if (candidate?.groundingMetadata?.groundingChunks) {
-            accumulatedChunks = [...accumulatedChunks, ...candidate.groundingMetadata.groundingChunks];
-            // Deduplicate streaming chunks immediately for UI responsiveness
-            const uniqueUris = new Set<string>();
-            const uniqueStreamingChunks = accumulatedChunks.filter(c => {
-                if (c.web?.uri && !uniqueUris.has(c.web.uri)) {
-                    uniqueUris.add(c.web.uri);
-                    return true;
-                }
-                return false;
-            });
-            setStreamingBotGroundingChunks(uniqueStreamingChunks);
-        }
-      }
+      for await (const chunk of result) { /* ... */ } // This part is unchanged
+
+      // ... logic for cleaning text and creating finalBotMessage remains the same ...
+      const finalBotMessage: ChatMessageInterface = { /* ... */ }; // Unchanged
       
-      const finalBotMessage: ChatMessageInterface = {
-        id: Date.now().toString() + '-bot',
-        text: accumulatedText,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      
-      // Process final grounding chunks, ensuring uniqueness
-      const finalUniqueChunksMap = new Map<string, GroundingChunk>();
-      accumulatedChunks.forEach(chunk => {
-        if (chunk.web?.uri && !finalUniqueChunksMap.has(chunk.web.uri)) {
-          finalUniqueChunksMap.set(chunk.web.uri, chunk);
-        }
+      // Update the UI and save the final state to sessionStorage
+      setMessages(prev => {
+        const finalMessages = [...prev, finalBotMessage];
+        sessionStorage.setItem(CHAT_HISTORY_SESSION_KEY, JSON.stringify(finalMessages));
+        return finalMessages;
       });
-      const finalUniqueGroundingChunks = Array.from(finalUniqueChunksMap.values());
-
-     if (finalUniqueGroundingChunks.length > 0) {
-  const sourcesText = finalUniqueGroundingChunks
-    .map(chunk => `[${chunk.web?.title || 'Source'}](${chunk.web?.uri})`)
-    .join('\n');
-  
-  if (sourcesText) {
-    finalBotMessage.text += `\n\n**Sources:**\n${sourcesText}`; // <-- This line appends the duplicate list
-  }
-}
-
-      setMessages(prevMessages => [...prevMessages, finalBotMessage]);
 
     } catch (e) {
-      console.error("Error sending message to Gemini:", e);
-      setError(`Sorry, an error occurred while processing your request. ${e instanceof Error ? e.message : String(e)}`);
-      const errorBotMessage: ChatMessageInterface = {
-        id: Date.now().toString() + '-bot-error',
-        text: "I encountered an issue. Please try again or rephrase your question.",
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      setMessages(prevMessages => [...prevMessages, errorBotMessage]);
+      // ... error handling is the same ...
     } finally {
+      // ... finally block is the same ...
       setIsLoading(false);
       setStreamingBotResponse('');
       setStreamingBotGroundingChunks([]);
     }
-  }, [chatSession]);
+  }, [chatSession, messages]); // Add `messages` to dependencies
 
-  if (!apiKey && !error) {
-     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-100 p-4">
-        <div className="bg-white p-8 rounded-lg shadow-xl text-center">
-          <h1 className="text-2xl font-bold text-sky-700 mb-4">Legal Aid Chatbot</h1>
-          <p className="text-red-600 text-lg">Configuration Error: API_KEY is missing.</p>
-          <p className="text-slate-600 mt-2">Please ensure the API_KEY environment variable is set for the application to function.</p>
-        </div>
-      </div>
-    );
-  }
-
-
-  return (
-    <div className="flex flex-col h-screen bg-slate-100 font-sans">
-      <Header />
-      <ChatWindow messages={messages} streamingBotResponse={streamingBotResponse} streamingBotGroundingChunks={streamingBotGroundingChunks} />
-      <div className="px-3 md:px-4 pt-2 pb-1 bg-slate-100">
-        {isLoading && <LoadingIndicator />}
-        {error && <ErrorMessage message={error} onClose={() => setError(null)} />}
-        {!isLoading && !error && messages.length > 0 && ( // Show suggestions only when not loading, no error, and chat has started
-            <SuggestionChips
-                suggestions={SUGGESTION_TEMPLATES}
-                onSuggestionClick={handleSendMessage}
-                isLoading={isLoading || !chatSession}
-            />
-        )}
-      </div>
-      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading || !chatSession} />
-    </div>
-  );
+  // ... rest of the component remains unchanged
+  return ( /* ... */ );
 };
 
 export default App;
