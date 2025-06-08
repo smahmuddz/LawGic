@@ -106,15 +106,15 @@ const App: React.FC = () => {
       });
       const finalUniqueGroundingChunks = Array.from(finalUniqueChunksMap.values());
 
-      if (finalUniqueGroundingChunks.length > 0) {
-        const sourcesText = finalUniqueGroundingChunks
-          .map(chunk => `[${chunk.web?.title || 'Source'}](${chunk.web?.uri})`)
-          .join('\n');
-        
-        if (sourcesText) {
-          finalBotMessage.text += `\n\n**Sources:**\n${sourcesText}`;
-        }
-      }
+     if (finalUniqueGroundingChunks.length > 0) {
+  const sourcesText = finalUniqueGroundingChunks
+    .map(chunk => `[${chunk.web?.title || 'Source'}](${chunk.web?.uri})`)
+    .join('\n');
+  
+  if (sourcesText) {
+    finalBotMessage.text += `\n\n**Sources:**\n${sourcesText}`; // <-- This line appends the duplicate list
+  }
+}
 
       setMessages(prevMessages => [...prevMessages, finalBotMessage]);
 
