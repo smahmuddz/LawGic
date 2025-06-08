@@ -19,24 +19,27 @@ const BotIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false, streamingGroundingChunks }) => {
   const isUser = message.sender === 'user';
-  
+
+  const stripLinksFromText = (text: string) => {
+    // Remove markdown links [title](url)
+    return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+  };
+
   const formatText = (text: string) => {
-    // Basic markdown for bold and links
     // Convert **text** to <strong>text</strong>
     let htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Convert [title](url) to <a href="url" target="_blank">title</a>
-    htmlText = htmlText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-600 hover:text-sky-800 underline">$1</a>');
+    // Remove embedded markdown links (we're showing links separately)
+    htmlText = htmlText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
     // Convert newlines to <br />
     htmlText = htmlText.replace(/\n/g, '<br />');
     return { __html: htmlText };
   };
 
   // Filter unique grounding chunks by URI for streaming display
-  const uniqueStreamingChunks = isStreaming && streamingGroundingChunks ? 
-    Array.from(new Map(streamingGroundingChunks.filter(c => c.web?.uri).map(c => [c.web!.uri, c])).values()) 
+  const uniqueStreamingChunks = isStreaming && streamingGroundingChunks
+    ? Array.from(new Map(streamingGroundingChunks.filter(c => c.web?.uri).map(c => [c.web!.uri, c])).values())
     : [];
 
   return (
@@ -53,19 +56,27 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
             : 'bg-slate-200 text-slate-800 rounded-bl-none'
         }`}
       >
-        <div className="prose prose-sm max-w-none text-inherit" dangerouslySetInnerHTML={formatText(message.text)} />
-        
-        {isStreaming && uniqueStreamingChunks && uniqueStreamingChunks.length > 0 && (
+        <div
+          className="prose prose-sm max-w-none text-inherit"
+          dangerouslySetInnerHTML={formatText(stripLinksFromText(message.text))}
+        />
+
+        {isStreaming && uniqueStreamingChunks.length > 0 && (
           <div className="mt-2 pt-2 border-t border-slate-300">
             <p className="text-xs font-semibold text-slate-600">Sources (updating):</p>
             <ul className="list-disc list-inside text-xs">
               {uniqueStreamingChunks.map(chunk => (
-                  <li key={chunk.web!.uri}>
-                    <a href={chunk.web!.uri} target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-800 underline">
-                      {chunk.web!.title || chunk.web!.uri}
-                    </a>
-                  </li>
-                ))}
+                <li key={chunk.web!.uri}>
+                  <a
+                    href={chunk.web!.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sky-600 hover:text-sky-800 underline"
+                  >
+                    {chunk.web!.title || chunk.web!.uri}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
         )}
@@ -75,7 +86,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
         </p>
       </div>
       {isUser && (
-         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-300 flex items-center justify-center text-slate-700">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-300 flex items-center justify-center text-slate-700">
           <UserIcon className="w-5 h-5" />
         </div>
       )}
