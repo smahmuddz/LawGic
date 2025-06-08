@@ -24,22 +24,32 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
   const isUser = message.sender === 'user';
   
   const formatText = (text: string) => {
-    // Basic markdown for bold and links
-    // Convert **text** to <strong>text</strong>
     let htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Convert [title](url) to <a href="url" target="_blank">title</a>
     htmlText = htmlText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-600 hover:text-sky-800 underline">$1</a>');
-    // Convert newlines to <br />
     htmlText = htmlText.replace(/\n/g, '<br />');
     return { __html: htmlText };
   };
 
-  // Determine which chunks to display (streaming or final) and filter for uniqueness.
-  // This assumes the final `message` object can have a `grounding.chunks` property.
   const chunksToDisplay = isStreaming ? streamingGroundingChunks : message.grounding?.chunks;
   const uniqueChunks = chunksToDisplay
     ? Array.from(new Map(chunksToDisplay.filter(c => c.web?.uri).map(c => [c.web!.uri, c])).values())
     : [];
+
+  // --- START: NEW LOGIC TO CLEAN THE MESSAGE TEXT ---
+  let cleanText = message.text;
+  // If this is a bot message and we have structured sources to display,
+  // try to remove the redundant text-based source list from the AI's response.
+  if (!isUser && uniqueChunks.length > 0) {
+    // This regex looks for a common pattern like "Sources:" or "References:"
+    // at the end of the text and removes it and everything after.
+    const sourceMarkerRegex = /(\n\n|\n)(sources|references):/i;
+    const match = cleanText.match(sourceMarkerRegex);
+    if (match && match.index) {
+        // We only take the text *before* the source list starts.
+        cleanText = cleanText.substring(0, match.index).trim();
+    }
+  }
+  // --- END: NEW LOGIC TO CLEAN THE MESSAGE TEXT ---
 
   return (
     <div className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -55,8 +65,10 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
             : 'bg-slate-200 text-slate-800 rounded-bl-none'
         }`}
       >
-        <div className="prose prose-sm max-w-none text-inherit" dangerouslySetInnerHTML={formatText(message.text)} />
+        {/* Use the cleaned text for rendering the message body */}
+        <div className="prose prose-sm max-w-none text-inherit" dangerouslySetInnerHTML={formatText(cleanText)} />
         
+        {/* This section now becomes the single, authoritative source list */}
         {uniqueChunks.length > 0 && (
           <div className="mt-2 pt-2 border-t border-slate-300">
             <p className="text-xs font-semibold text-slate-600">
