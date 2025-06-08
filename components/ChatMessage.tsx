@@ -19,25 +19,26 @@ const BotIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false, streamingGroundingChunks }) => {
+export const ChatMessage: React.FC<ChatMessageProps> = ({
+  message,
+  isStreaming = false,
+  streamingGroundingChunks
+}) => {
   const isUser = message.sender === 'user';
 
-  const stripLinksFromText = (text: string) => {
-    // Remove markdown links [title](url)
-    return text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
+  const cleanMessageText = (text: string): string => {
+    // Remove markdown links and source lines
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '') // strip links
+      .replace(/^Sources:.*$/gim, '')           // remove lines starting with "Sources:"
+      .replace(/^[-*]\s.*$/gim, '')             // remove bullet points (likely sources)
+      .replace(/^\s*[\w.-]+\.[a-z]{2,}.*$/gim, '') // remove lines like domain.com
+      .replace(/\n{2,}/g, '\n')                 // compress multiple newlines
+      .trim()
+      .replace(/\n/g, '<br />');                // convert newlines to <br />
   };
 
-  const formatText = (text: string) => {
-    // Convert **text** to <strong>text</strong>
-    let htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Remove embedded markdown links (we're showing links separately)
-    htmlText = htmlText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1');
-    // Convert newlines to <br />
-    htmlText = htmlText.replace(/\n/g, '<br />');
-    return { __html: htmlText };
-  };
-
-  // Filter unique grounding chunks by URI for streaming display
   const uniqueStreamingChunks = isStreaming && streamingGroundingChunks
     ? Array.from(new Map(streamingGroundingChunks.filter(c => c.web?.uri).map(c => [c.web!.uri, c])).values())
     : [];
@@ -58,7 +59,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
       >
         <div
           className="prose prose-sm max-w-none text-inherit"
-          dangerouslySetInnerHTML={formatText(stripLinksFromText(message.text))}
+          dangerouslySetInnerHTML={{ __html: cleanMessageText(message.text) }}
         />
 
         {isStreaming && uniqueStreamingChunks.length > 0 && (
@@ -80,6 +81,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
             </ul>
           </div>
         )}
+
         <p className={`text-xs mt-2 ${isUser ? 'text-sky-200 text-right' : 'text-slate-500 text-left'}`}>
           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {isStreaming && <span className="italic ml-1">(typing...)</span>}
