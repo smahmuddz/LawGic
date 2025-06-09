@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { ChatMessageInterface, GroundingChunk } from '../types';
 
@@ -19,37 +20,25 @@ const BotIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const PaperClipIconMini: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={className || "w-4 h-4"}>
+    <path fillRule="evenodd" d="M15.621 4.379a3 3 0 00-4.242 0l-7 7a3 3 0 004.241 4.243L15.75 8.5a1.5 1.5 0 00-2.121-2.122L6.95 13.05a.75.75 0 01-1.06-1.061l6.679-6.678a3 3 0 00-4.243-4.242L1.95 7.379a4.5 4.5 0 006.364 6.364l7-7a4.5 4.5 0 00-6.364-6.364L4.379 4.379z" clipRule="evenodd" />
+  </svg>
+);
+
 
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming = false, streamingGroundingChunks }) => {
   const isUser = message.sender === 'user';
   
   const formatText = (text: string) => {
-    let htmlText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    let htmlText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); // Basic escaping
+    htmlText = htmlText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     htmlText = htmlText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-sky-600 hover:text-sky-800 underline">$1</a>');
     htmlText = htmlText.replace(/\n/g, '<br />');
     return { __html: htmlText };
   };
 
-  const chunksToDisplay = isStreaming ? streamingGroundingChunks : message.grounding?.chunks;
-  const uniqueChunks = chunksToDisplay
-    ? Array.from(new Map(chunksToDisplay.filter(c => c.web?.uri).map(c => [c.web!.uri, c])).values())
-    : [];
-
-  // --- START: NEW LOGIC TO CLEAN THE MESSAGE TEXT ---
-  let cleanText = message.text;
-  // If this is a bot message and we have structured sources to display,
-  // try to remove the redundant text-based source list from the AI's response.
-  if (!isUser && uniqueChunks.length > 0) {
-    // This regex looks for a common pattern like "Sources:" or "References:"
-    // at the end of the text and removes it and everything after.
-    const sourceMarkerRegex = /(\n\n|\n)(sources|references):/i;
-    const match = cleanText.match(sourceMarkerRegex);
-    if (match && match.index) {
-        // We only take the text *before* the source list starts.
-        cleanText = cleanText.substring(0, match.index).trim();
-    }
-  }
-  // --- END: NEW LOGIC TO CLEAN THE MESSAGE TEXT ---
+  const displayGroundingChunks = isStreaming ? streamingGroundingChunks : message.grounding?.chunks;
 
   return (
     <div className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -65,28 +54,38 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, isStreaming =
             : 'bg-slate-200 text-slate-800 rounded-bl-none'
         }`}
       >
-        {/* Use the cleaned text for rendering the message body */}
-        <div className="prose prose-sm max-w-none text-inherit" dangerouslySetInnerHTML={formatText(cleanText)} />
+        {message.fileInfo && (
+          <div className="mb-2 p-2 bg-slate-50 rounded-md border border-slate-300 text-xs text-slate-700">
+            <div className="flex items-center gap-1.5">
+              <PaperClipIconMini className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+              <span className="font-medium truncate" title={message.fileInfo.name}>Attached: {message.fileInfo.name}</span>
+            </div>
+            <span className="text-slate-500 ml-[calc(0.875rem+0.375rem)] block">Type: {message.fileInfo.type}</span>
+          </div>
+        )}
+        {message.text && <div className="prose prose-sm max-w-none text-inherit" dangerouslySetInnerHTML={formatText(message.text)} />}
         
-        {/* This section now becomes the single, authoritative source list */}
-        {uniqueChunks.length > 0 && (
+        {displayGroundingChunks && displayGroundingChunks.length > 0 && (
           <div className="mt-2 pt-2 border-t border-slate-300">
             <p className="text-xs font-semibold text-slate-600">
-              Sources{isStreaming ? ' (updating):' : ':'}
+              {isStreaming ? "Sources (updating):" : "Sources:"}
             </p>
             <ul className="list-disc list-inside text-xs">
-              {uniqueChunks.map(chunk => (
-                  <li key={chunk.web!.uri}>
-                    <a href={chunk.web!.uri} target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-800 underline">
-                      {chunk.web!.title || chunk.web!.uri}
+              {Array.from(new Set(displayGroundingChunks.filter(c => c.web?.uri).map(c => c.web!.uri))).map(uri => {
+                const chunk = displayGroundingChunks.find(c => c.web?.uri === uri);
+                return (
+                  <li key={uri}>
+                    <a href={chunk!.web!.uri} target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-800 underline">
+                      {chunk!.web!.title || uri}
                     </a>
                   </li>
-                ))}
+                );
+              })}
             </ul>
           </div>
         )}
         <p className={`text-xs mt-2 ${isUser ? 'text-sky-200 text-right' : 'text-slate-500 text-left'}`}>
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {isStreaming && <span className="italic ml-1">(typing...)</span>}
         </p>
       </div>
