@@ -12,15 +12,7 @@ import { GEMINI_MODEL_NAME, SYSTEM_INSTRUCTION, INITIAL_BOT_GREETING_ID, INITIAL
 
 const CHAT_HISTORY_SESSION_KEY = 'chat_history';
 
-// Type guard to validate data from sessionStorage
-const isChatMessageHistory = (data: any): data is ChatMessageInterface[] => {
-  return Array.isArray(data) && data.every(item => 
-    typeof item.id === 'string' &&
-    typeof item.text === 'string' &&
-    (item.sender === 'user' || item.sender === 'bot') &&
-    typeof item.timestamp === 'string'
-  );
-};
+// The isChatMessageHistory type guard is no longer needed as we are not restoring history.
 
 const App: React.FC = () => {
   const [chatSession, setChatSession] = useState<Chat | null>(null);
@@ -38,46 +30,26 @@ const App: React.FC = () => {
     }
     try {
       const ai = new GoogleGenAI({ apiKey });
-      const savedHistoryRaw = sessionStorage.getItem(CHAT_HISTORY_SESSION_KEY);
-      let savedHistory: ChatMessageInterface[] | null = null;
 
-      if (savedHistoryRaw) {
-        const parsedData = JSON.parse(savedHistoryRaw);
-        if (isChatMessageHistory(parsedData)) {
-          savedHistory = parsedData;
-        }
-      }
+      // Removed the chat history restoration logic that caused the error.
+      // The application will now start a new chat session on every load.
+      const newChatSession = ai.chats.create({
+        model: GEMINI_MODEL_NAME,
+        config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{googleSearch: {}}] },
+      });
 
-      let newChatSession;
-      if (savedHistory && savedHistory.length > 1) { // Restore only if more than the greeting exists
-        const historyForSDK: Content[] = savedHistory
-          .slice(1) // Exclude initial greeting
-          .map(msg => ({
-            role: msg.sender === 'bot' ? 'model' : 'user',
-            parts: [{ text: msg.text }]
-          }));
+      const initialGreeting: ChatMessageInterface = {
+        id: INITIAL_BOT_GREETING_ID,
+        text: INITIAL_BOT_GREETING_TEXT,
+        sender: 'bot',
+        timestamp: new Date()
+      };
 
-        newChatSession = ai.chats.restore({
-          model: GEMINI_MODEL_NAME,
-          config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{googleSearch: {}}] },
-          history: historyForSDK,
-        });
-        setMessages(savedHistory.map(msg => ({...msg, timestamp: new Date(msg.timestamp)})));
-      } else {
-        newChatSession = ai.chats.create({
-          model: GEMINI_MODEL_NAME,
-          config: { systemInstruction: SYSTEM_INSTRUCTION, tools: [{googleSearch: {}}] },
-        });
-        const initialGreeting: ChatMessageInterface = {
-          id: INITIAL_BOT_GREETING_ID,
-          text: INITIAL_BOT_GREETING_TEXT,
-          sender: 'bot',
-          timestamp: new Date()
-        };
-        setMessages([initialGreeting]);
-        sessionStorage.setItem(CHAT_HISTORY_SESSION_KEY, JSON.stringify([initialGreeting]));
-      }
+      setMessages([initialGreeting]);
+      // The session history for the current session will be cleared and started with the greeting.
+      sessionStorage.setItem(CHAT_HISTORY_SESSION_KEY, JSON.stringify([initialGreeting]));
       setChatSession(newChatSession);
+
     } catch (e) {
       console.error("Failed to initialize Gemini AI:", e);
       setError(`Failed to initialize AI services. ${e instanceof Error ? e.message : String(e)}`);
