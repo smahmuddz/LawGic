@@ -1,13 +1,13 @@
 // src/App.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { GoogleGenAI, Chat, Candidate } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Header } from './components/Header';
 import { ChatWindow } from './components/ChatWindow';
 import { ChatInput } from './components/ChatInput';
 import { LoadingIndicator } from './components/LoadingIndicator';
 import { ErrorMessage } from './components/ErrorMessage';
 import { SuggestionChips } from './components/SuggestionChips';
-import type { ChatMessageInterface, GroundingChunk } from './types';
+import type { ChatMessageInterface } from './types';
 import {
   GEMINI_MODEL_NAME,
   SYSTEM_INSTRUCTION,
@@ -17,28 +17,28 @@ import {
 } from './constants';
 
 const App: React.FC = () => {
-  const [chatSession, setChatSession] = useState<Chat | null>(null);
+  const [model, setModel] = useState<any | null>(null);
   const [messages, setMessages] = useState<ChatMessageInterface[]>([]);
   const [streamingBotResponse, setStreamingBotResponse] = useState<string>('');
-  const [streamingBotGroundingChunks, setStreamingBotGroundingChunks] = useState<GroundingChunk[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const apiKey = process.env.API_KEY;
 
   useEffect(() => {
-    const initChat = async () => {
+    const init = async () => {
       if (!apiKey) {
         setError('API Key not found. Please set VITE_API_KEY in your .env file.');
         return;
       }
 
       try {
-        const ai = new GoogleGenAI({ apiKey });
-        const newChatSession = await ai.chat({
+        const ai = new GoogleGenerativeAI(apiKey);
+        const model = ai.getGenerativeModel({
           model: GEMINI_MODEL_NAME,
           systemInstruction: SYSTEM_INSTRUCTION,
-          tools: [{ googleSearch: {} }],
         });
+
+        setModel(model);
 
         const initialGreeting: ChatMessageInterface = {
           id: INITIAL_BOT_GREETING_ID,
@@ -46,21 +46,19 @@ const App: React.FC = () => {
           sender: 'bot',
           timestamp: new Date(),
         };
-
         setMessages([initialGreeting]);
-        setChatSession(newChatSession);
       } catch (e) {
-        console.error('Failed to initialize Gemini AI:', e);
+        console.error('Failed to initialize AI:', e);
         setError(`Failed to initialize AI services. ${e instanceof Error ? e.message : String(e)}`);
       }
     };
 
-    initChat();
+    init();
   }, [apiKey]);
 
   const handleSendMessage = useCallback(
     async (userInput: string) => {
-      if (!chatSession || !userInput.trim() || isLoading) return;
+      if (!model || !userInput.trim() || isLoading) return;
 
       const newUserMessage: ChatMessageInterface = {
         id: Date.now().toString(),
@@ -75,52 +73,36 @@ const App: React.FC = () => {
       setIsLoading(true);
       setError(null);
       setStreamingBotResponse('');
-      setStreamingBotGroundingChunks([]);
 
       try {
-        const result = await chatSession.sendMessageStream({ message: userInput });
-        let accumulatedText = '';
-        let accumulatedChunks: GroundingChunk[] = [];
+        const result = await model.generateContentStream([userInput]);
+        let responseText = '';
 
-        for await (const chunk of result) {
-          const chunkText = chunk.text;
-          if (chunkText) {
-            accumulatedText += chunkText;
-            setStreamingBotResponse((prev) => prev + chunkText);
-          }
-          const candidate = chunk.candidates?.[0] as Candidate | undefined;
-          if (candidate?.groundingMetadata?.groundingChunks) {
-            accumulatedChunks.push(...candidate.groundingMetadata.groundingChunks);
-            const uniqueStreamingChunks = Array.from(
-              new Map(accumulatedChunks.filter((c) => c.web?.uri).map((c) => [c.web!.uri, c])).values()
-            );
-            setStreamingBotGroundingChunks(uniqueStreamingChunks);
+        for await (const chunk of result.stream) {
+          const part = chunk.text();
+          if (part) {
+            responseText += part;
+            setStreamingBotResponse((prev) => prev + part);
           }
         }
 
-        const finalUniqueGroundingChunks = Array.from(
-          new Map(accumulatedChunks.filter((c) => c.web?.uri).map((c) => [c.web!.uri, c])).values()
-        );
-
         const finalBotMessage: ChatMessageInterface = {
           id: Date.now().toString() + '-bot',
-          text: accumulatedText,
+          text: responseText,
           sender: 'bot',
           timestamp: new Date(),
-          grounding: { chunks: finalUniqueGroundingChunks },
         };
 
         setMessages((prev) => [...prev, finalBotMessage]);
       } catch (e) {
-        console.error('Error sending message to Gemini:', e);
-        setError(`Sorry, an error occurred. ${e instanceof Error ? e.message : String(e)}`);
+        console.error('Error during AI response:', e);
+        setError(`Error: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setIsLoading(false);
         setStreamingBotResponse('');
-        setStreamingBotGroundingChunks([]);
       }
     },
-    [chatSession, messages, isLoading]
+    [model, messages, isLoading]
   );
 
   return (
@@ -129,7 +111,7 @@ const App: React.FC = () => {
       <ChatWindow
         messages={messages}
         streamingBotResponse={streamingBotResponse}
-        streamingBotGroundingChunks={streamingBotGroundingChunks}
+        streamingBotGroundingChunks={[]} // Optional: remove if not used
       />
       <div className="px-4 pt-2 pb-1 bg-white border-t">
         {isLoading && <LoadingIndicator />}
@@ -138,11 +120,11 @@ const App: React.FC = () => {
           <SuggestionChips
             suggestions={SUGGESTION_TEMPLATES}
             onSuggestionClick={handleSendMessage}
-            isLoading={isLoading || !chatSession}
+            isLoading={isLoading || !model}
           />
         )}
       </div>
-      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading || !chatSession} />
+      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading || !model} />
     </div>
   );
 };
