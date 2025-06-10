@@ -137,7 +137,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask about Bangladeshi law or constitution..."
+            placeholder="Ask anything..."
             className="flex-grow p-3 border-none focus:ring-0 resize-none h-12 min-h-[3rem] max-h-32 leading-tight bg-transparent text-slate-700 placeholder-slate-400"
             rows={1}
             disabled={isLoading}
