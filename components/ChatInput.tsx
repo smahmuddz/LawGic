@@ -1,5 +1,4 @@
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 interface ChatInputProps {
   onSendMessage: (message: string, file?: File | null) => void;
@@ -28,17 +27,54 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wrapperRef = useRef<HTMLFormElement>(null);
+
+  const handleFile = useCallback((file: File) => {
+    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf')) {
+      setSelectedFile(file);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer?.files?.[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  }, [handleFile]);
+
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    const file = Array.from(e.clipboardData?.files || []).find(f => f.type.startsWith('image/'));
+    if (file) {
+      e.preventDefault();
+      handleFile(file);
+    }
+  }, [handleFile]);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    wrapper.addEventListener('drop', handleDrop);
+    wrapper.addEventListener('dragover', e => e.preventDefault());
+    wrapper.addEventListener('paste', handlePaste);
+
+    return () => {
+      wrapper.removeEventListener('drop', handleDrop);
+      wrapper.removeEventListener('dragover', e => e.preventDefault());
+      wrapper.removeEventListener('paste', handlePaste);
+    };
+  }, [handleDrop, handlePaste]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setSelectedFile(event.target.files[0]);
+    if (event.target.files?.[0]) {
+      handleFile(event.target.files[0]);
     }
   };
 
   const handleRemoveFile = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // Reset file input
+      fileInputRef.current.value = '';
     }
   };
 
@@ -48,7 +84,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
     if (input.trim() || selectedFile) {
       onSendMessage(input.trim(), selectedFile);
       setInput('');
-      handleRemoveFile(); // Clears file and resets input
+      handleRemoveFile();
     }
   };
 
@@ -60,7 +96,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-slate-100 p-3 md:p-4 border-t border-slate-300 sticky bottom-0">
+    <form ref={wrapperRef} onSubmit={handleSubmit} className="bg-slate-100 p-3 md:p-4 border-t border-slate-300 sticky bottom-0">
       <div className="bg-white rounded-lg shadow">
         {selectedFile && (
           <div className="px-3 py-2 text-sm text-slate-600 flex justify-between items-center border-b border-slate-200">
@@ -95,13 +131,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading }
             className="p-3 rounded-md text-slate-500 hover:text-sky-600 disabled:text-slate-300 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1"
             aria-label="Attach file"
           >
-            <PaperClipIcon className="w-5 h-5"/>
+            <PaperClipIcon className="w-5 h-5" />
           </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Ask Anything..."
+            placeholder="Ask about Bangladeshi law or constitution..."
             className="flex-grow p-3 border-none focus:ring-0 resize-none h-12 min-h-[3rem] max-h-32 leading-tight bg-transparent text-slate-700 placeholder-slate-400"
             rows={1}
             disabled={isLoading}
