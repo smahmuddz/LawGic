@@ -9,7 +9,7 @@ If a question falls outside the scope of Bangladeshi law or requires specific le
 If you use Google Search for grounding, you MUST list the source URLs clearly under a 'Sources:' heading.`;
 
 export const INITIAL_BOT_GREETING_ID = "initial-bot-greeting";
-export const INITIAL_BOT_GREETING_TEXT = "Welcome to Lawgic, your Legal Aid Assistant for Bangladesh! How can I help you understand Bangladeshi law or the Constitution today? \n\nRemember: As an AI Legal Aid Assistant, the information I provide is for educational and informational purposes only. It is not legal advice and should not be substituted for consultation with a qualified legal professional in Bangladesh. For specific legal issues, please consult a lawyer.";
+export const INITIAL_BOT_GREETING_TEXT = "Welcome to Lawgic, your Legal Aid Assistant! How can I help you today? \n\nRemember: As an AI Legal Aid Assistant, the information I provide is for educational and informational purposes only. It is not legal advice and should not be substituted for consultation with a qualified legal professional in Bangladesh. For specific legal issues, please consult a lawyer.";
 
 export const SUGGESTION_TEMPLATES: string[] = [
 ];
